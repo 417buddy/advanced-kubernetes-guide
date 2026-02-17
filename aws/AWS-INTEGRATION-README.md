@@ -2,7 +2,7 @@
 
 ## E-Commerce Platform on Amazon EKS
 
-**AWS Account ID**: `564268554451`  
+**AWS Account ID**: `xyzzzzzzzzour`  
 **Region**: `us-east-1` (N. Virginia)  
 **Cluster Name**: `ecommerce-prod`
 
