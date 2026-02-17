@@ -28,6 +28,29 @@ minikube addons enable metrics-server
 kind create cluster --name ecommerce-dev
 ```
 
+**☁️ AWS EKS (Production) - RECOMMENDED:**
+```bash
+# Navigate to project directory
+cd advanced-kubernetes-guide
+
+# Make scripts executable
+chmod +x aws/scripts/*.sh scripts/*.sh
+
+# Step 1: Create EKS cluster (15-20 minutes)
+./aws/scripts/setup-eks.sh create
+
+# Step 2: Build and push images to ECR
+./aws/scripts/ecr-build-push.sh all
+
+# Step 3: Complete AWS integration
+./aws/scripts/aws-integration-setup.sh
+
+# Step 4: Deploy applications
+./scripts/deploy.sh deploy
+```
+
+**Full AWS Integration Guide:** See [aws/AWS-INTEGRATION-README.md](aws/AWS-INTEGRATION-README.md)
+
 **Cloud (Production):**
 ```bash
 # AWS EKS
@@ -125,25 +148,38 @@ kubectl logs -f <pod-name> -n ecommerce-production
 
 ```
 advanced-kubernetes-guide/
-├── manifests/
-│   ├── 00-namespaces.yaml          # Namespace definitions
-│   ├── 01-configmap-secrets.yaml   # Configuration and secrets
-│   ├── 02-frontend-deployment.yaml # Frontend deployment + PDB
+├── manifests/                    # Kubernetes manifests
+│   ├── 00-namespaces.yaml
+│   ├── 01-configmap-secrets.yaml
+│   ├── 02-frontend-deployment.yaml
 │   ├── 03-api-gateway-deployment.yaml
 │   ├── 04-product-service-deployment.yaml
 │   ├── 05-order-service-deployment.yaml
 │   ├── 06-postgres-statefulset.yaml
 │   ├── 07-redis-statefulset.yaml
-│   ├── 08-services.yaml            # All service definitions
-│   ├── 09-hpa.yaml                 # Horizontal Pod Autoscalers
-│   ├── 10-vpa.yaml                 # Vertical Pod Autoscalers
-│   └── 11-network-policies.yaml    # Network security policies
-├── scripts/
-│   └── deploy.sh                   # Deployment automation script
-├── configs/                        # Additional configurations
+│   ├── 08-services.yaml
+│   ├── 09-hpa.yaml
+│   ├── 10-vpa.yaml
+│   └── 11-network-policies.yaml
+├── scripts/                      # Deployment scripts
+│   └── deploy.sh
+├── aws/                          # AWS integration
+│   ├── eks/                      # EKS configurations
+│   ├── ecr/                      # ECR configurations
+│   ├── iam/                      # IAM policies
+│   ├── scripts/                  # AWS setup scripts
+│   │   ├── setup-eks.sh
+│   │   ├── ecr-build-push.sh
+│   │   └── aws-integration-setup.sh
+│   └── AWS-INTEGRATION-README.md
+├── .github/workflows/            # GitHub Actions CI/CD
+│   ├── validate-manifests.yaml
+│   ├── deploy.yaml
+│   └── security-scan.yaml
+├── configs/                      # Additional configurations
 ├── docs/
-│   └── complete-guide.md           # Comprehensive documentation
-└── README.md                       # This file
+│   └── complete-guide.md         # Comprehensive documentation
+└── README.md                     # This file
 ```
 
 ---
