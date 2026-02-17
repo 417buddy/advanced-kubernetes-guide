@@ -1,0 +1,60 @@
+# LimitRange for default resource limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ecommerce-limits
+  namespace: ecommerce-production
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    min:
+      cpu: 50m
+      memory: 64Mi
+    max:
+      cpu: 4000m
+      memory: 8Gi
+    maxLimitRequestRatio:
+      cpu: 10
+      memory: 5
+---
+# ResourceQuota for namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ecommerce-production-quota
+  namespace: ecommerce-production
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    pods: "100"
+    services: "20"
+    secrets: "50"
+    configmaps: "50"
+    persistentvolumeclaims: "10"
+    replicationcontrollers: "20"
+---
+# ResourceQuota for monitoring namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ecommerce-monitoring-quota
+  namespace: ecommerce-monitoring
+spec:
+  hard:
+    requests.cpu: "10"
+    requests.memory: 20Gi
+    limits.cpu: "20"
+    limits.memory: 40Gi
+    pods: "50"
+    services: "10"
+    secrets: "20"
+    configmaps: "20"

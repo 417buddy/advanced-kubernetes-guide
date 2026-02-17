@@ -1,0 +1,103 @@
+# Service Account for applications
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ecommerce-app-sa
+  namespace: ecommerce-production
+  labels:
+    app: ecommerce
+---
+# Service Account for monitoring
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ecommerce-monitoring-sa
+  namespace: ecommerce-monitoring
+  labels:
+    app: monitoring
+---
+# Role for application pods
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ecommerce-pod-reader
+  namespace: ecommerce-production
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["app-secrets", "postgres-secret"]
+---
+# Role for monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ecommerce-monitoring-reader
+  namespace: ecommerce-production
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list", "watch"]
+---
+# RoleBinding for application
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ecommerce-app-pod-reader-binding
+  namespace: ecommerce-production
+subjects:
+- kind: ServiceAccount
+  name: ecommerce-app-sa
+  namespace: ecommerce-production
+roleRef:
+  kind: Role
+  name: ecommerce-pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# RoleBinding for monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ecommerce-monitoring-binding
+  namespace: ecommerce-production
+subjects:
+- kind: ServiceAccount
+  name: ecommerce-monitoring-sa
+  namespace: ecommerce-monitoring
+roleRef:
+  kind: Role
+  name: ecommerce-monitoring-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# ClusterRole for cluster-wide monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ecommerce-cluster-monitoring
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "namespaces", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding for cluster monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ecommerce-cluster-monitoring-binding
+subjects:
+- kind: ServiceAccount
+  name: ecommerce-monitoring-sa
+  namespace: ecommerce-monitoring
+roleRef:
+  kind: ClusterRole
+  name: ecommerce-cluster-monitoring
+  apiGroup: rbac.authorization.k8s.io

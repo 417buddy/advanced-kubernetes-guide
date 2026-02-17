@@ -1,0 +1,100 @@
+name: Kubernetes Manifest Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'manifests/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'manifests/**'
+
+jobs:
+  validate:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Validate YAML syntax
+      run: |
+        echo "Validating YAML files..."
+        for file in manifests/*.yaml; do
+          echo "Checking $file"
+          kubectl apply --dry-run=client -f "$file" || exit 1
+        done
+
+    - name: Install kubeval
+      run: |
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo cp kubeval /usr/local/bin/
+
+    - name: Validate with kubeval
+      run: |
+        for file in manifests/*.yaml; do
+          echo "Validating $file"
+          kubeval "$file" --ignore-missing-schemas
+        done
+
+    - name: Install conftest
+      run: |
+        wget https://github.com/open-policy-agent/conftest/releases/download/v0.44.0/conftest_0.44.0_Linux_x86_64.tar.gz
+        tar xf conftest_0.44.0_Linux_x86_64.tar.gz
+        sudo cp conftest /usr/local/bin/
+
+    - name: Security scan with conftest
+      run: |
+        echo "Running security policies..."
+        # Create policy directory
+        mkdir -p policy
+        
+        # Create security policy
+        cat > policy/security.rego <<EOF
+        package main
+        
+        deny[msg] {
+          input.kind == "Deployment"
+          not input.spec.template.spec.securityContext.runAsNonRoot
+          msg := sprintf("Deployment %s should set runAsNonRoot to true", [input.metadata.name])
+        }
+        
+        deny[msg] {
+          input.kind == "Deployment"
+          container := input.spec.template.spec.containers[_]
+          not container.securityContext.readOnlyRootFilesystem
+          msg := sprintf("Container %s in Deployment %s should set readOnlyRootFilesystem to true", [container.name, input.metadata.name])
+        }
+        
+        deny[msg] {
+          input.kind == "Deployment"
+          container := input.spec.template.spec.containers[_]
+          not container.resources.limits.cpu
+          msg := sprintf("Container %s in Deployment %s should have CPU limits", [container.name, input.metadata.name])
+        }
+        
+        deny[msg] {
+          input.kind == "Deployment"
+          container := input.spec.template.spec.containers[_]
+          not container.resources.limits.memory
+          msg := sprintf("Container %s in Deployment %s should have memory limits", [container.name, input.metadata.name])
+        }
+        EOF
+        
+        # Run policies
+        conftest test manifests/*.yaml --policy policy || echo "Policy violations found (this is informational)"
+
+    - name: Summary
+      run: |
+        echo "✅ Validation completed successfully!"
+        echo ""
+        echo "Manifest files validated:"
+        ls -la manifests/*.yaml | wc -l

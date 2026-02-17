@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce-production
+  labels:
+    name: production
+    environment: production
+    monitoring: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce-monitoring
+  labels:
+    name: monitoring
+    environment: production

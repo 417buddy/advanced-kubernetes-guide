@@ -1,0 +1,152 @@
+name: Deploy to Kubernetes Cluster
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  KUBECONFIG: ${{ secrets.KUBECONFIG }}
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure kubeconfig
+      run: |
+        mkdir -p ~/.kube
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+        chmod 600 ~/.kube/config
+
+    - name: Verify cluster connection
+      run: |
+        kubectl cluster-info
+        kubectl get nodes
+
+    - name: Pre-deployment checks
+      run: |
+        echo "Running pre-deployment checks..."
+        kubectl get namespaces
+        kubectl get pods -n ecommerce-production || true
+
+    - name: Apply namespaces
+      run: |
+        echo "Creating namespaces..."
+        kubectl apply -f manifests/00-namespaces.yaml
+
+    - name: Apply ConfigMaps and Secrets
+      run: |
+        echo "Applying ConfigMaps and Secrets..."
+        kubectl apply -f manifests/01-configmap-secrets.yaml
+
+    - name: Deploy databases
+      run: |
+        echo "Deploying databases..."
+        kubectl apply -f manifests/06-postgres-statefulset.yaml
+        kubectl apply -f manifests/07-redis-statefulset.yaml
+        
+        echo "Waiting for databases to be ready..."
+        kubectl wait --for=condition=ready pod -l app=postgres --timeout=300s || true
+        kubectl wait --for=condition=ready pod -l app=redis --timeout=300s || true
+
+    - name: Deploy backend services
+      run: |
+        echo "Deploying backend services..."
+        kubectl apply -f manifests/04-product-service-deployment.yaml
+        kubectl apply -f manifests/05-order-service-deployment.yaml
+
+    - name: Deploy API Gateway
+      run: |
+        echo "Deploying API Gateway..."
+        kubectl apply -f manifests/03-api-gateway-deployment.yaml
+
+    - name: Deploy frontend
+      run: |
+        echo "Deploying frontend..."
+        kubectl apply -f manifests/02-frontend-deployment.yaml
+
+    - name: Apply services
+      run: |
+        echo "Applying services..."
+        kubectl apply -f manifests/08-services.yaml
+
+    - name: Apply ingress and certificates
+      run: |
+        echo "Applying Ingress and Cert-Manager..."
+        kubectl apply -f manifests/12-ingress.yaml
+        kubectl apply -f manifests/13-cert-manager.yaml
+
+    - name: Apply scaling configurations
+      run: |
+        echo "Applying HPA and VPA..."
+        kubectl apply -f manifests/09-hpa.yaml
+        kubectl apply -f manifests/10-vpa.yaml
+
+    - name: Apply network policies
+      run: |
+        echo "Applying Network Policies..."
+        kubectl apply -f manifests/11-network-policies.yaml
+
+    - name: Apply RBAC and quotas
+      run: |
+        echo "Applying RBAC and Resource Quotas..."
+        kubectl apply -f manifests/14-rbac.yaml
+        kubectl apply -f manifests/15-resource-quota.yaml
+
+    - name: Verify deployment
+      run: |
+        echo "Verifying deployment..."
+        kubectl get all -n ecommerce-production
+        kubectl get pods -n ecommerce-production
+        kubectl get svc -n ecommerce-production
+
+    - name: Wait for rollout
+      run: |
+        echo "Waiting for all deployments to complete..."
+        kubectl rollout status deployment/frontend -n ecommerce-production --timeout=300s
+        kubectl rollout status deployment/api-gateway -n ecommerce-production --timeout=300s
+        kubectl rollout status deployment/product-service -n ecommerce-production --timeout=300s
+        kubectl rollout status deployment/order-service -n ecommerce-production --timeout=300s
+
+    - name: Post-deployment health check
+      run: |
+        echo "Running post-deployment health checks..."
+        kubectl get pods -n ecommerce-production | grep -E 'Running|Completed' || exit 1
+        echo "✅ Deployment completed successfully!"
+
+    - name: Deployment summary
+      if: always()
+      run: |
+        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Pods Status" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        kubectl get pods -n ecommerce-production -o wide >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Services" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        kubectl get svc -n ecommerce-production >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY

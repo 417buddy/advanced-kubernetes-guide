@@ -1,0 +1,80 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Trivy
+      run: |
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt update
+        sudo apt install trivy
+
+    - name: Scan Kubernetes manifests for misconfigurations
+      run: |
+        echo "Scanning Kubernetes manifests for security misconfigurations..."
+        trivy config manifests/
+      continue-on-error: true
+
+    - name: Install kube-bench
+      run: |
+        wget https://github.com/aquasecurity/kube-bench/releases/download/v0.6.12/kube-bench_0.6.12_linux_amd64.deb
+        sudo dpkg -i kube-bench_0.6.12_linux_amd64.deb || true
+
+    - name: Check for hardcoded secrets
+      run: |
+        echo "Checking for hardcoded secrets in manifests..."
+        grep -r "password:" manifests/ | grep -v "example" | grep -v "CHANGE" || echo "No obvious hardcoded passwords found"
+        grep -r "secret:" manifests/ | grep -v "secretRef" | grep -v "stringData" || echo "No obvious hardcoded secrets found"
+
+    - name: Validate pod security standards
+      run: |
+        echo "Validating Pod Security Standards..."
+        
+        # Check for privileged containers
+        if grep -r "privileged: true" manifests/; then
+          echo "⚠️  WARNING: Privileged containers found!"
+        else
+          echo "✅ No privileged containers"
+        fi
+        
+        # Check for root users
+        if grep -r "runAsUser: 0" manifests/; then
+          echo "⚠️  WARNING: Containers running as root!"
+        else
+          echo "✅ No containers running as root (UID 0)"
+        fi
+        
+        # Check for capability additions
+        if grep -r "capabilities:" manifests/ | grep -v "drop:"; then
+          echo "⚠️  INFO: Some containers are adding capabilities"
+        else
+          echo "✅ No capability additions found"
+        fi
+
+    - name: Generate security report
+      run: |
+        echo "## Security Scan Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Scan Date: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Manifest Files Scanned: $(ls manifests/*.yaml | wc -l)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Findings:" >> $GITHUB_STEP_SUMMARY
+        echo "- Configuration scan: Completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Secrets check: Completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Pod security validation: Completed" >> $GITHUB_STEP_SUMMARY
