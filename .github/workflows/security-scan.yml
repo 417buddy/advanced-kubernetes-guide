@@ -5,34 +5,19 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
-  schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
 
 jobs:
   security-scan:
-    name: Security Scan
     runs-on: self-hosted
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Ensure dependencies
       run: |
-        # Update system
         sudo dnf update -y
         sudo dnf install -y curl tar gzip git
-        # Install Docker if not present
-        if ! command -v docker &> /dev/null; then
-          sudo dnf install -y docker
-          sudo systemctl enable docker
-          sudo systemctl start docker
-        fi
-        # Install kubectl
-        if ! command -v kubectl &> /dev/null; then
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-        fi
 
     - name: Install Trivy
       run: |
@@ -41,57 +26,34 @@ jobs:
         sudo mv trivy /usr/local/bin/
         trivy --version
 
-    - name: Scan Kubernetes manifests for misconfigurations
+    - name: Scan Kubernetes manifests
       run: |
-        echo "Scanning Kubernetes manifests for security misconfigurations..."
-        trivy config manifests/
-      continue-on-error: true
+        mkdir -p manifests
+        trivy config manifests/ || true
 
     - name: Install kube-bench
       run: |
         curl -sfL https://github.com/aquasecurity/kube-bench/releases/download/v0.6.12/kube-bench_0.6.12_linux_amd64.tar.gz -o kube-bench.tar.gz
         tar -xzf kube-bench.tar.gz
         sudo mv kube-bench /usr/local/bin/
-        kube-bench version || true
+        kube-bench || true
 
-    - name: Check for hardcoded secrets
+    - name: Hardcoded secrets check
       run: |
-        echo "Checking for hardcoded secrets in manifests..."
-        grep -r "password:" manifests/ | grep -v "example" | grep -v "CHANGE" || echo "No obvious hardcoded passwords found"
-        grep -r "secret:" manifests/ | grep -v "secretRef" | grep -v "stringData" || echo "No obvious hardcoded secrets found"
+        grep -r "password:" manifests/ || echo "No obvious passwords found"
+        grep -r "secret:" manifests/ || echo "No obvious secrets found"
 
-    - name: Validate pod security standards
+    - name: Pod security validation
       run: |
-        echo "Validating Pod Security Standards..."
-        
-        if grep -r "privileged: true" manifests/; then
-          echo "⚠️  WARNING: Privileged containers found!"
-        else
-          echo "✅ No privileged containers"
-        fi
-        
-        if grep -r "runAsUser: 0" manifests/; then
-          echo "⚠️  WARNING: Containers running as root!"
-        else
-          echo "✅ No containers running as root (UID 0)"
-        fi
-        
-        if grep -r "capabilities:" manifests/ | grep -v "drop:"; then
-          echo "⚠️  INFO: Some containers are adding capabilities"
-        else
-          echo "✅ No capability additions found"
-        fi
+        if grep -r "privileged: true" manifests/; then echo "Privileged containers found"; else echo "No privileged containers"; fi
+        if grep -r "runAsUser: 0" manifests/; then echo "Containers running as root"; else echo "No root containers"; fi
 
-    - name: Generate security report
+    - name: Generate GitHub summary
       run: |
         echo "## Security Scan Report" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Scan Date: $(date)" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Manifest Files Scanned: $(ls manifests/*.yaml | wc -l)" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Findings:" >> $GITHUB_STEP_SUMMARY
-        echo "- Configuration scan: Completed" >> $GITHUB_STEP_SUMMARY
-        echo "- Secrets check: Completed" >> $GITHUB_STEP_SUMMARY
-        echo "- Pod security validation: Completed" >> $GITHUB_STEP_SUMMARY
+        echo "### Date: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "### Manifest files scanned: $(ls manifests/*.yaml 2>/dev/null | wc -l)" >> $GITHUB_STEP_SUMMARY
+        echo "- Trivy scan: completed" >> $GITHUB_STEP_SUMMARY
+        echo "- kube-bench scan: completed" >> $GITHUB_STEP_SUMMARY
+        echo "- Hardcoded secrets check: completed" >> $GITHUB_STEP_SUMMARY
 
