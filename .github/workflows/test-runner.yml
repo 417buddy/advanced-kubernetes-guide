@@ -1,0 +1,10 @@
+name: Test Self-Hosted Runner
+on: [push]
+
+jobs:
+  test-runner:
+    runs-on: self-hosted
+    steps:
+      - name: Echo Test
+        run: echo "Hello from EC2 self-hosted runner!"
+
